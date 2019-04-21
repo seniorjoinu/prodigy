@@ -1,32 +1,34 @@
 package net.joinu.prodigy
 
-import kotlinx.coroutines.coroutineScope
-import kotlinx.coroutines.delay
-import kotlinx.coroutines.launch
+import com.esotericsoftware.kryo.Kryo
+import com.esotericsoftware.kryo.io.Input
+import com.esotericsoftware.kryo.io.Output
 import kotlinx.coroutines.runBlocking
 import mu.KotlinLogging
+import net.joinu.nioudp.MAX_CHUNK_SIZE_BYTES
 import net.joinu.rudp.ConfigurableRUDPSocket
-import org.nustaq.serialization.FSTConfiguration
 import java.io.Serializable
+import java.lang.reflect.Method
 import java.net.InetSocketAddress
 import java.nio.ByteBuffer
 import java.util.*
-import kotlin.reflect.KClass
 
 
-typealias Handler = (from: InetSocketAddress, message: Any) -> Unit
 typealias SendHandler = suspend (packet: ProtocolPacket, recipient: InetSocketAddress) -> Unit
 
-abstract class AbstractProtocol(val name: String, vararg handlerPairs: Pair<String, Handler>) {
-    internal val handlers: MutableMap<String, Handler> = hashMapOf()
+@Target(AnnotationTarget.FUNCTION)
+@SuppressWarnings("unused")
+annotation class On(val messageType: String)
 
-    init {
-        handlerPairs.forEach { handlers.putIfAbsent(it.first, it.second) }
-    }
-
+abstract class AbstractProtocol(val name: String) {
     internal var sendHandler: SendHandler? = null
     internal fun applySendHandler(handler: SendHandler) {
         sendHandler = handler
+    }
+
+    internal fun getHandlers(): Map<String, Method> {
+        val annotatedMethods = this::class.java.declaredMethods.filter { it.isAnnotationPresent(On::class.java) }
+        return annotatedMethods.associate { it.getAnnotation(On::class.java).messageType to it }
     }
 
     protected suspend fun send(messageType: String, messageBody: Any, recipient: InetSocketAddress) {
@@ -60,8 +62,8 @@ class ProtocolRunner(bindAddress: InetSocketAddress) {
         }
     }
 
-    fun registerProtocols(vararg protocol: AbstractProtocol) {
-        protocols.values.forEach { this.registerProtocol(it) }
+    fun registerProtocols(vararg protocols: AbstractProtocol) {
+        protocols.forEach { this.registerProtocol(it) }
     }
 
     fun registerProtocol(protocol: AbstractProtocol) {
@@ -90,22 +92,31 @@ class ProtocolRunner(bindAddress: InetSocketAddress) {
                 return@onMessage
             }
 
-            val handler = protocol.handlers[packet.messageType]
+            val handler = protocol.getHandlers()[packet.messageType]
 
             if (handler == null) {
                 logger.debug { "Received a message for unknown messageType: ${packet.messageType} for protocol: ${packet.protocolName}" }
                 return@onMessage
             }
 
-            val payloadType = handler::class.java
-                .declaredMethods
-                .first {
-                    !it.returnType.isAssignableFrom(Void::class.java)
+            var addressAssigned = false
+            var payloadAssigned = false
+            if (packet.messageType == "lol") {
+                println("")
+            }
+            val parameters = handler.parameterTypes.map {
+                return@map if (InetSocketAddress::class.java.isAssignableFrom(it) && !addressAssigned) {
+                    addressAssigned = true
+                    from
+                } else if (!payloadAssigned) {
+                    payloadAssigned = true
+                    SerializationUtils.toAny(packet.payload, it)
+                } else {
+                    throw IllegalArgumentException("Invalid parameter with type: ${it::class.java} in @On method: ${handler.name} in class ${this::class.java}")
                 }
-                .parameterTypes[1]
-            val deserializedPayload = SerializationUtils.toAny(packet.payload, payloadType)
+            }.toTypedArray()
 
-            handler.invoke(from, deserializedPayload)
+            handler.invoke(protocol, *parameters)
         }
 
         socket.listen()
@@ -116,14 +127,34 @@ class ProtocolRunner(bindAddress: InetSocketAddress) {
     }
 }
 
-data class ProtocolPacket(val protocolName: String, val messageType: String, val payload: ByteArray) : Serializable
+data class ProtocolPacket(
+    var protocolName: String = "",
+    var messageType: String = "",
+    var payload: ByteArray = ByteArray(0)
+) : Serializable
 
 internal object SerializationUtils {
-    val mapper by lazy { FSTConfiguration.createDefaultConfiguration() }
+    val mapper by lazy {
+        val m = Kryo()
+        m.register(ProtocolPacket::class.java)
+        m.register(ByteArray::class.java)
+        m
+    }
 
-    fun <T : Any> registerClass(vararg clazz: KClass<T>) = mapper.registerClass(*(clazz.map { it.java }.toTypedArray()))
-    fun toBytes(obj: Any): ByteArray = mapper.asByteArray(obj)
-    fun <T : Any> toAny(bytes: ByteArray, clazz: Class<T>): T = clazz.cast(mapper.asObject(bytes))
+    fun registerClass(clazz: Class<out Any>) = mapper.register(clazz)
+
+    // TODO: handle null
+    fun toBytes(obj: Any): ByteArray {
+        val output = Output(ByteArray(MAX_CHUNK_SIZE_BYTES))
+        mapper.writeObjectOrNull(output, obj, obj::class.java)
+
+        return output.toBytes()
+    }
+
+    fun <T> toAny(bytes: ByteArray, clazz: Class<T>): T {
+        return mapper.readObjectOrNull(Input(bytes), clazz)
+    }
+
     inline fun <reified T : Any> toAny(bytes: ByteArray): T =
         toAny(bytes, T::class.java)
 }

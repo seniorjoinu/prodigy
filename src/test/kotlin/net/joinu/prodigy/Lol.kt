@@ -7,22 +7,25 @@ import kotlinx.coroutines.runBlocking
 import java.net.InetSocketAddress
 
 
-object ExampleProtocol : AbstractProtocol("EXAMPLE",
-    "lol" to { from: InetSocketAddress, message: Any ->
-        println("Lol ${message as Int} from $from")
-
-        ExampleProtocol.lolReceived = true
-    },
-    "kek" to { _, _ ->
-        println("Kek")
-
-        ExampleProtocol.kekReceived = true
-    }
-) {
+object ExampleProtocol : AbstractProtocol("EXAMPLE") {
     var lolSent = false
     var lolReceived = false
     var kekSent = false
     var kekReceived= false
+
+    @On("lol")
+    fun onLol(from: InetSocketAddress, message: Int) {
+        println("Lol $message from $from")
+
+        ExampleProtocol.lolReceived = true
+    }
+
+    @On("kek")
+    fun onKek() {
+        println("Kek")
+
+        ExampleProtocol.kekReceived = true
+    }
 
     suspend fun lol(recipient: InetSocketAddress) {
         send("lol", 123, recipient)
