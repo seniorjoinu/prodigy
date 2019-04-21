@@ -6,6 +6,11 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import java.net.InetSocketAddress
 
+/**
+ * TODO: check null arguments
+ * TODO: check coroutine invocation inside callbacks
+ * TODO: check serialization optimizations
+ */
 
 object ExampleProtocol : AbstractProtocol("EXAMPLE") {
     var lolSent = false
