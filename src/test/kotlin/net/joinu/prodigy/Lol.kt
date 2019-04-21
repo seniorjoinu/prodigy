@@ -7,38 +7,39 @@ import kotlinx.coroutines.runBlocking
 import java.net.InetSocketAddress
 
 /**
- * TODO: check null arguments
- * TODO: check coroutine invocation inside callbacks
  * TODO: check serialization optimizations
  */
 
-object ExampleProtocol : AbstractProtocol("EXAMPLE") {
-    var lolSent = false
-    var lolReceived = false
-    var kekSent = false
-    var kekReceived= false
+var lolSent = false
+var lolReceived = false
+var kekSent = false
+var kekReceived = false
 
-    @On("lol")
-    fun onLol(from: InetSocketAddress, message: Int) {
-        println("Lol $message from $from")
+object ExampleProtocol : AbstractProtocol() {
+    override val protocol = protocol("Example") {
+        on("lol") {
+            println("Lol ${request.getPayloadAs(Int::class.java)} from ${request.sender}")
 
-        ExampleProtocol.lolReceived = true
-    }
+            lolReceived = true
 
-    @On("kek")
-    fun onKek() {
-        println("Kek")
+            kek(request.sender)
 
-        ExampleProtocol.kekReceived = true
+            kekSent = true
+        }
+        on("kek") {
+            println("Kek")
+
+            kekReceived = true
+        }
     }
 
     suspend fun lol(recipient: InetSocketAddress) {
-        send("lol", 123, recipient)
+        sendMessage("lol", 123, recipient)
         lolSent = true
     }
 
     suspend fun kek(recipient: InetSocketAddress) {
-        send("kek", 123, recipient)
+        sendMessage("kek", 123, recipient)
         kekSent = true
     }
 }
@@ -60,10 +61,9 @@ fun main() {
         launch(Dispatchers.IO) { runner2.run() }
 
         launch { ExampleProtocol.lol(addr1) }
-        launch { ExampleProtocol.kek(addr2) }
 
         while (true) {
-            if (with(ExampleProtocol) { (kekReceived && kekSent && lolReceived && lolSent) }) {
+            if (kekReceived && kekSent && lolReceived && lolSent) {
                 runner1.close()
                 runner2.close()
                 break
