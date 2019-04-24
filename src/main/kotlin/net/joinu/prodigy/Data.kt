@@ -1,9 +1,17 @@
 package net.joinu.prodigy
 
 import java.net.InetSocketAddress
+import java.util.*
 
+
+object ProtocolPacketFlag {
+    const val REQUEST = 0
+    const val RESPONSE = 1
+}
 
 data class ProtocolPacket(
+    var protocolThreadId: UUID = UUID.randomUUID(),
+    var protocolFlag: Int = ProtocolPacketFlag.REQUEST,
     var protocolName: String = "",
     var messageType: String = "",
     var payload: ByteArray = ByteArray(0)
@@ -30,7 +38,4 @@ data class ProtocolPacket(
 }
 
 typealias SendHandler = suspend (packet: ProtocolPacket, recipient: InetSocketAddress) -> Unit
-
-@Target(AnnotationTarget.FUNCTION)
-@SuppressWarnings("unused")
-annotation class On(val messageType: String)
+typealias ReceiveHandler = suspend (threadId: UUID) -> ProtocolPacket?
