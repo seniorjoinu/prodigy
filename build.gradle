@@ -21,7 +21,7 @@ dependencies {
     implementation "org.jetbrains.kotlinx:kotlinx-coroutines-core:$coroutines_version"
     implementation 'io.github.microutils:kotlin-logging:1.6.24'
     implementation "com.github.seniorjoinu:reliable-udp:$reliable_udp_version"
-    implementation "com.esotericsoftware:kryo:5.0.0-RC4"
+    implementation "de.ruedigermoeller:fst:2.56"
     implementation "org.jetbrains.kotlin:kotlin-reflect:$kotlin_version"
 
     testImplementation 'org.junit.jupiter:junit-jupiter-api:5.3.1'

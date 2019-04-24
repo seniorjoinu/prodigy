@@ -1,40 +1,29 @@
 package net.joinu.prodigy
 
-import com.esotericsoftware.kryo.Kryo
-import com.esotericsoftware.kryo.io.Input
-import com.esotericsoftware.kryo.io.Output
 import mu.KotlinLogging
-import net.joinu.nioudp.MAX_CHUNK_SIZE_BYTES
+import org.nustaq.serialization.FSTConfiguration
+import java.io.Serializable
 import java.util.*
 
 object SerializationUtils {
     private val logger = KotlinLogging.logger("SerializationUtils-${Random().nextInt()}")
 
-    val mapper by lazy {
-        val m = Kryo()
-        m.isRegistrationRequired = false
-        m
-    }
+    val mapper by lazy { FSTConfiguration.createAndroidDefaultConfiguration() }
 
-    fun toBytes(obj: Any?): ByteArray {
-        // TODO: change to buffer pool
-        val output = Output(ByteArray(MAX_CHUNK_SIZE_BYTES))
-        if (obj == null)
-            mapper.writeObjectOrNull(output, obj, Any::class.java)
-        else
-            mapper.writeObjectOrNull(output, obj, obj::class.java)
+    fun toBytes(obj: Serializable?): ByteArray {
+        val bytes = mapper.asByteArray(obj)
 
         logger.trace { "Successfully serialized $obj" }
 
-        return output.toBytes()
+        return bytes
     }
 
     fun <T> toAny(bytes: ByteArray, clazz: Class<T>): T {
-        val obj = mapper.readObjectOrNull(Input(bytes), clazz)
+        val obj = mapper.asObject(bytes)
 
         logger.trace { "Successfully deserialized $obj" }
 
-        return obj
+        return clazz.cast(obj)
     }
 
     inline fun <reified T> toAny(bytes: ByteArray): T =

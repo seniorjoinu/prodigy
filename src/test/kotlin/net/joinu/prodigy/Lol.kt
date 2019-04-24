@@ -1,9 +1,9 @@
 package net.joinu.prodigy
 
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
+import java.io.Serializable
 import java.net.InetSocketAddress
 
 
@@ -12,10 +12,10 @@ object ChatMessageType {
     const val DIRECT = 1
 }
 
-data class ChatMessage(val from: String, val message: String, val type: Int)
+data class ChatMessage(val from: String, val message: String, val type: Int) : Serializable
 
 class SimpleChatProtocol(val nickname: String) : AbstractProtocol() {
-    val roomMembers = mutableMapOf<String, InetSocketAddress>()
+    val roomMembers = HashMap<String, InetSocketAddress>()
 
     override val protocol = protocol("CHAT") {
         on("message") {
@@ -26,12 +26,8 @@ class SimpleChatProtocol(val nickname: String) : AbstractProtocol() {
 
         on("ask to join") {
             // we can whitelist here
-            askToJoinSuccess(request.sender, roomMembers)
-        }
 
-        on("ask to join success") {
-            roomMembers.putAll(request.getPayloadAs())
-            onAskToJoinSuccess()
+            request.respond(roomMembers)
         }
 
         on("join") {
@@ -54,7 +50,7 @@ class SimpleChatProtocol(val nickname: String) : AbstractProtocol() {
         val messageObj = ChatMessage(nickname, message, ChatMessageType.SHARED)
 
         roomMembers.forEach {
-            sendMessage("message", messageObj, it.value)
+            send("message", it.value, messageObj)
         }
     }
 
@@ -62,33 +58,29 @@ class SimpleChatProtocol(val nickname: String) : AbstractProtocol() {
         val messageObj = ChatMessage(nickname, message, ChatMessageType.DIRECT)
         val recipient = roomMembers[to]!!
 
-        sendMessage("message", messageObj, recipient)
+        send("message", recipient, messageObj)
     }
 
     suspend fun join() {
         roomMembers.forEach {
-            sendMessage("join", nickname, it.value)
+            send("join", it.value, nickname)
         }
     }
 
     suspend fun leave() {
         roomMembers.forEach {
-            sendMessage("leave", nickname, it.value)
+            send("leave", it.value, nickname)
         }
     }
 
     suspend fun askToJoin(gateway: InetSocketAddress) {
-        sendMessage("ask to join", null, gateway)
-    }
-
-    suspend fun askToJoinSuccess(recipient: InetSocketAddress, roomMembers: Map<String, InetSocketAddress>) {
-        sendMessage("ask to join success", roomMembers, recipient)
+        val roomMembers = sendAndReceive<HashMap<String, InetSocketAddress>>("ask to join", gateway)
+        this.roomMembers.putAll(roomMembers)
     }
 
     lateinit var onMessage: suspend (message: ChatMessage) -> Unit
     lateinit var onJoin: suspend (nickname: String) -> Unit
     lateinit var onLeave: suspend (nickname: String) -> Unit
-    lateinit var onAskToJoinSuccess: suspend () -> Unit
 }
 
 
@@ -104,16 +96,17 @@ fun main() {
         val runner2 = ProtocolRunner(addr2)
         val runner3 = ProtocolRunner(addr3)
 
-        val chat1 = SimpleChatProtocol("John Smith")
-        val chat2 = SimpleChatProtocol("John Doe")
-        val chat3 = SimpleChatProtocol("John Snow")
+        val nick1 = "John Smith"
+        val nick2 = "John Doe"
+        val nick3 = "John Snow"
+
+        val chat1 = SimpleChatProtocol(nick1)
+        val chat2 = SimpleChatProtocol(nick2)
+        val chat3 = SimpleChatProtocol(nick3)
 
         chat1.roomMembers[chat1.nickname] = addr1
         chat2.roomMembers[chat2.nickname] = addr2
         chat3.roomMembers[chat3.nickname] = addr3
-
-        chat2.onAskToJoinSuccess = suspend { chat2.join() }
-        chat3.onAskToJoinSuccess = suspend { chat3.join() }
 
         runner1.registerProtocol(chat1)
         runner2.registerProtocol(chat2)
@@ -123,18 +116,20 @@ fun main() {
         launch(Dispatchers.IO) { runner2.run() }
         launch(Dispatchers.IO) { runner3.run() }
 
-        // TODO: add responses
         chat2.askToJoin(addr1)
         chat3.askToJoin(addr1)
 
-        while (true) {
-            if (with(ExampleProtocol) { kekReceived && kekSent && lolReceived && lolSent }) {
-                runner1.close()
-                runner2.close()
-                break
-            }
+        chat2.join()
+        chat3.join()
 
-            delay(10)
-        }
+        chat1.send("Hey, guys!")
+        chat2.send("What?")
+        chat1.send("Isn't this cool?")
+        chat3.send("Yes ofc")
+        chat3.sendDirect("Actually not, haha", nick2)
+
+        runner1.close()
+        runner2.close()
+        runner3.close()
     }
 }

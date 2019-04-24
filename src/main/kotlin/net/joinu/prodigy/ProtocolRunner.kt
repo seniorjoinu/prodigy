@@ -13,10 +13,11 @@ import java.util.concurrent.ConcurrentHashMap
  * TODO: check serialization optimizations
  */
 class ProtocolRunner(val bindAddress: InetSocketAddress) {
-    val protocols = hashMapOf<String, AbstractProtocol>()
-    val socket = ConfigurableRUDPSocket(1400)
-    val responses = ConcurrentHashMap<UUID, ProtocolPacket>()
+    val protocols = ConcurrentHashMap<String, AbstractProtocol>()
+    val socket = ConfigurableRUDPSocket(1400) // TODO: make it configurable
+    val responses = ConcurrentHashMap<Long, ProtocolPacket>()
     var state = ProtocolRunnerState.NEW
+
     val sendHandler: SendHandler = { packet, recipient ->
         val serializedPacket = SerializationUtils.toBytes(packet)
         val buffer = ByteBuffer.allocateDirect(serializedPacket.size)
@@ -25,13 +26,21 @@ class ProtocolRunner(val bindAddress: InetSocketAddress) {
 
         socket.send(buffer, recipient, 5000, { 50 }, { 1400 })
     }
-    val receiveHandler: ReceiveHandler = { responses[it] }
+
+    val receiveHandler: ReceiveHandler = {
+        val response = responses[it]
+        if (response != null)
+            responses.remove(it)
+
+        response
+    }
 
     private val logger = KotlinLogging.logger("ProtocolRunner-${Random().nextInt()}")
 
     init {
         runBlocking {
             socket.bind(bindAddress)
+            logger.debug { "Bound to $bindAddress" }
         }
     }
 
@@ -52,6 +61,9 @@ class ProtocolRunner(val bindAddress: InetSocketAddress) {
 
             if (packet.protocolFlag == ProtocolPacketFlag.RESPONSE) {
                 responses[packet.protocolThreadId] = packet
+
+                logger.debug { "Received RESPONSE packet for threadId: ${packet.protocolThreadId}, storing..." }
+
                 return@onMessage
             }
 
@@ -69,9 +81,16 @@ class ProtocolRunner(val bindAddress: InetSocketAddress) {
                 return@onMessage
             }
 
-            handler.request =
-                Request(from, packet.payload, packet.protocolThreadId, packet.messageType, packet.protocolName)
-            handler.request.applyRespondHandler(sendHandler)
+            handler.request = Request(
+                from,
+                packet.payload,
+                packet.protocolThreadId,
+                packet.messageType,
+                packet.protocolName,
+                sendHandler
+            )
+
+            logger.debug { "Received REQUEST packet for threadId: ${packet.protocolThreadId}, invoking handler..." }
 
             handler.body.invoke(handler)
         }

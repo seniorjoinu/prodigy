@@ -1,5 +1,6 @@
 package net.joinu.prodigy
 
+import java.io.Serializable
 import java.net.InetSocketAddress
 import java.util.*
 
@@ -10,12 +11,12 @@ object ProtocolPacketFlag {
 }
 
 data class ProtocolPacket(
-    var protocolThreadId: UUID = UUID.randomUUID(),
+    var protocolThreadId: Long = Random().nextLong(),
     var protocolFlag: Int = ProtocolPacketFlag.REQUEST,
     var protocolName: String = "",
     var messageType: String = "",
     var payload: ByteArray = ByteArray(0)
-) {
+) : Serializable {
     override fun equals(other: Any?): Boolean {
         if (this === other) return true
         if (javaClass != other?.javaClass) return false
@@ -38,4 +39,4 @@ data class ProtocolPacket(
 }
 
 typealias SendHandler = suspend (packet: ProtocolPacket, recipient: InetSocketAddress) -> Unit
-typealias ReceiveHandler = suspend (threadId: UUID) -> ProtocolPacket?
+typealias ReceiveHandler = suspend (threadId: Long) -> ProtocolPacket?
