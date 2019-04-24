@@ -8,6 +8,9 @@ import java.nio.ByteBuffer
 import java.util.*
 
 
+/**
+ * TODO: check serialization optimizations
+ */
 class ProtocolRunner(val bindAddress: InetSocketAddress) {
     val protocols = hashMapOf<String, AbstractProtocol>()
     val socket = ConfigurableRUDPSocket(1400)

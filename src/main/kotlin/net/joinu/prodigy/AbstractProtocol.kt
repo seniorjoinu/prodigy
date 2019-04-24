@@ -15,7 +15,7 @@ abstract class AbstractProtocol {
     protected suspend fun sendCrossProtocolMessage(
         protocolName: String,
         messageType: String,
-        messageBody: Any,
+        messageBody: Any?,
         recipient: InetSocketAddress
     ) {
         val serializedBody = SerializationUtils.toBytes(messageBody)
@@ -26,7 +26,7 @@ abstract class AbstractProtocol {
 
     protected suspend fun sendMessage(
         messageType: String,
-        messageBody: Any,
+        messageBody: Any?,
         recipient: InetSocketAddress
     ) = sendCrossProtocolMessage(protocol.name, messageType, messageBody, recipient)
 }

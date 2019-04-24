@@ -16,9 +16,13 @@ object SerializationUtils {
         m
     }
 
-    fun toBytes(obj: Any): ByteArray {
+    fun toBytes(obj: Any?): ByteArray {
+        // TODO: change to buffer pool
         val output = Output(ByteArray(MAX_CHUNK_SIZE_BYTES))
-        mapper.writeObjectOrNull(output, obj, obj::class.java)
+        if (obj == null)
+            mapper.writeObjectOrNull(output, obj, Any::class.java)
+        else
+            mapper.writeObjectOrNull(output, obj, obj::class.java)
 
         logger.trace { "Successfully serialized $obj" }
 
