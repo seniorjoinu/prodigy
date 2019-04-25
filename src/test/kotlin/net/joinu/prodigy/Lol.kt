@@ -50,7 +50,7 @@ class SimpleChatProtocol(val nickname: String) : AbstractProtocol() {
         val messageObj = ChatMessage(nickname, message, ChatMessageType.SHARED)
 
         roomMembers.forEach {
-            send("message", it.value, messageObj)
+            send("CHAT", "message", it.value, messageObj)
         }
     }
 
@@ -58,23 +58,23 @@ class SimpleChatProtocol(val nickname: String) : AbstractProtocol() {
         val messageObj = ChatMessage(nickname, message, ChatMessageType.DIRECT)
         val recipient = roomMembers[to]!!
 
-        send("message", recipient, messageObj)
+        send("CHAT", "message", recipient, messageObj)
     }
 
     suspend fun join() {
         roomMembers.forEach {
-            send("join", it.value, nickname)
+            send("CHAT", "join", it.value, nickname)
         }
     }
 
     suspend fun leave() {
         roomMembers.forEach {
-            send("leave", it.value, nickname)
+            send("CHAT", "leave", it.value, nickname)
         }
     }
 
     suspend fun askToJoin(gateway: InetSocketAddress) {
-        val roomMembers = sendAndReceive<HashMap<String, InetSocketAddress>>("ask to join", gateway)
+        val roomMembers = sendAndReceive<HashMap<String, InetSocketAddress>>("CHAT", "ask to join", gateway)
         this.roomMembers.putAll(roomMembers)
     }
 
@@ -85,7 +85,7 @@ class SimpleChatProtocol(val nickname: String) : AbstractProtocol() {
 
 
 fun main() {
-    System.setProperty(org.slf4j.impl.SimpleLogger.DEFAULT_LOG_LEVEL_KEY, "DEBUG")
+    System.setProperty(org.slf4j.impl.SimpleLogger.DEFAULT_LOG_LEVEL_KEY, "TRACE")
 
     runBlocking {
         val addr1 = InetSocketAddress("localhost", 1337)
@@ -112,9 +112,9 @@ fun main() {
         runner2.registerProtocol(chat2)
         runner3.registerProtocol(chat3)
 
-        launch(Dispatchers.IO) { runner1.run() }
-        launch(Dispatchers.IO) { runner2.run() }
-        launch(Dispatchers.IO) { runner3.run() }
+        val a = launch(Dispatchers.IO) { runner1.run() }
+        val b = launch(Dispatchers.IO) { runner2.run() }
+        val c = launch(Dispatchers.IO) { runner3.run() }
 
         chat2.askToJoin(addr1)
         chat3.askToJoin(addr1)
@@ -127,6 +127,9 @@ fun main() {
         chat1.send("Isn't this cool?")
         chat3.send("Yes ofc")
         chat3.sendDirect("Actually not, haha", nick2)
+
+        chat2.leave()
+        chat3.leave()
 
         runner1.close()
         runner2.close()

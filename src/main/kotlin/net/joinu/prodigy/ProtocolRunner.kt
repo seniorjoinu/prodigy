@@ -24,7 +24,7 @@ class ProtocolRunner(val bindAddress: InetSocketAddress) {
         buffer.put(serializedPacket)
         buffer.flip()
 
-        socket.send(buffer, recipient, 5000, { 50 }, { 1400 })
+        socket.send(buffer, recipient, 15000, { 50 }, { 1400 })
     }
 
     val receiveHandler: ReceiveHandler = {
@@ -44,12 +44,16 @@ class ProtocolRunner(val bindAddress: InetSocketAddress) {
         }
     }
 
-    fun registerProtocol(protocol: AbstractProtocol) {
-        protocols[protocol.protocol.name] = protocol
-        protocol.applySendHandler(sendHandler)
-        protocol.applyReceiveHandler(receiveHandler)
+    fun registerProtocol(wrapper: AbstractProtocol) {
+        protocols[wrapper.protocol.protocolName] = wrapper
 
-        logger.debug { "Protocol ${protocol.protocol.name} registered" }
+        wrapper.applySendHandler(sendHandler)
+        wrapper.protocol.applySendHandler(sendHandler)
+
+        wrapper.applyReceiveHandler(receiveHandler)
+        wrapper.protocol.applyReceiveHandler(receiveHandler)
+
+        logger.debug { "Protocol ${wrapper.protocol.protocolName} registered" }
     }
 
     suspend fun run() {
