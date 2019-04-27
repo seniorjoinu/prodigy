@@ -1,9 +1,9 @@
 package net.joinu.prodigy
 
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
+import org.junit.jupiter.api.Test
 import java.io.Serializable
 import java.net.InetSocketAddress
 
@@ -69,7 +69,7 @@ class SimpleChatProtocol(val nickname: String) : AbstractProtocol() {
     }
 
     suspend fun leave() {
-        roomMembers.forEach {
+        roomMembers.filter { it.key != nickname }.forEach {
             send("CHAT", "leave", it.value, nickname)
         }
     }
@@ -85,61 +85,63 @@ class SimpleChatProtocol(val nickname: String) : AbstractProtocol() {
 }
 
 
-fun main() {
-    System.setProperty(org.slf4j.impl.SimpleLogger.DEFAULT_LOG_LEVEL_KEY, "DEBUG")
+class ExampleTest {
 
-    runBlocking {
-        val addr1 = InetSocketAddress("localhost", 1337)
-        val addr2 = InetSocketAddress("localhost", 1338)
-        val addr3 = InetSocketAddress("localhost", 1339)
+    @Test
+    fun `chat protocol works well`() {
+        System.setProperty(org.slf4j.impl.SimpleLogger.DEFAULT_LOG_LEVEL_KEY, "DEBUG")
 
-        val runner1 = ProtocolRunner(addr1)
-        val runner2 = ProtocolRunner(addr2)
-        val runner3 = ProtocolRunner(addr3)
+        runBlocking {
+            val addr1 = InetSocketAddress("localhost", 1337)
+            val addr2 = InetSocketAddress("localhost", 1338)
+            val addr3 = InetSocketAddress("localhost", 1339)
 
-        val nick1 = "John Smith"
-        val nick2 = "John Doe"
-        val nick3 = "John Snow"
+            val runner1 = ProtocolRunner(addr1)
+            val runner2 = ProtocolRunner(addr2)
+            val runner3 = ProtocolRunner(addr3)
 
-        val chat1 = SimpleChatProtocol(nick1)
-        val chat2 = SimpleChatProtocol(nick2)
-        val chat3 = SimpleChatProtocol(nick3)
+            val nick1 = "John Smith"
+            val nick2 = "John Doe"
+            val nick3 = "John Snow"
 
-        chat1.onMessage = { println(it) }
-        chat2.onMessage = { println(it) }
-        chat3.onMessage = { println(it) }
+            val chat1 = SimpleChatProtocol(nick1)
+            val chat2 = SimpleChatProtocol(nick2)
+            val chat3 = SimpleChatProtocol(nick3)
 
-        chat1.roomMembers[chat1.nickname] = addr1
-        chat2.roomMembers[chat2.nickname] = addr2
-        chat3.roomMembers[chat3.nickname] = addr3
+            chat1.onMessage = { println(it) }
+            chat2.onMessage = { println(it) }
+            chat3.onMessage = { println(it) }
 
-        runner1.registerProtocol(chat1)
-        runner2.registerProtocol(chat2)
-        runner3.registerProtocol(chat3)
+            chat1.roomMembers[chat1.nickname] = addr1
+            chat2.roomMembers[chat2.nickname] = addr2
+            chat3.roomMembers[chat3.nickname] = addr3
 
-        val a = launch(Dispatchers.IO) { runner1.run() }
-        val b = launch(Dispatchers.IO) { runner2.run() }
-        val c = launch(Dispatchers.IO) { runner3.run() }
+            runner1.registerProtocol(chat1)
+            runner2.registerProtocol(chat2)
+            runner3.registerProtocol(chat3)
 
-        chat2.askToJoin(addr1)
-        chat2.join()
+            launch(Dispatchers.IO) { runner1.run() }
+            launch(Dispatchers.IO) { runner2.run() }
+            launch(Dispatchers.IO) { runner3.run() }
 
-        chat3.askToJoin(addr1)
-        chat3.join()
+            chat2.askToJoin(addr1)
+            chat2.join()
 
-        delay(2000)
+            chat3.askToJoin(addr1)
+            chat3.join()
 
-        chat1.send("Hey, guys!")
-        chat2.send("What?")
-        chat1.send("Isn't this cool?")
-        chat3.send("Yes ofc")
-        chat3.sendDirect("Actually not, haha", nick2)
+            chat1.send("Hey, guys!")
+            chat2.send("What?")
+            chat1.send("Isn't this cool?")
+            chat3.send("Yes ofc")
+            chat3.sendDirect("Actually not, haha", nick2)
 
-        chat2.leave()
-        chat3.leave()
+            chat2.leave()
+            chat3.leave()
 
-        runner1.close()
-        runner2.close()
-        runner3.close()
+            runner1.close()
+            runner2.close()
+            runner3.close()
+        }
     }
 }
