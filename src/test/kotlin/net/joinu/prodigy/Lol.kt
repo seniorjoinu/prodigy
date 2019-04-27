@@ -1,6 +1,7 @@
 package net.joinu.prodigy
 
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import java.io.Serializable
@@ -62,7 +63,7 @@ class SimpleChatProtocol(val nickname: String) : AbstractProtocol() {
     }
 
     suspend fun join() {
-        roomMembers.forEach {
+        roomMembers.filter { it.key != nickname }.forEach {
             send("CHAT", "join", it.value, nickname)
         }
     }
@@ -78,14 +79,14 @@ class SimpleChatProtocol(val nickname: String) : AbstractProtocol() {
         this.roomMembers.putAll(roomMembers)
     }
 
-    lateinit var onMessage: suspend (message: ChatMessage) -> Unit
-    lateinit var onJoin: suspend (nickname: String) -> Unit
-    lateinit var onLeave: suspend (nickname: String) -> Unit
+    var onMessage: suspend (message: ChatMessage) -> Unit = { }
+    var onJoin: suspend (nickname: String) -> Unit = { }
+    var onLeave: suspend (nickname: String) -> Unit = { }
 }
 
 
 fun main() {
-    System.setProperty(org.slf4j.impl.SimpleLogger.DEFAULT_LOG_LEVEL_KEY, "TRACE")
+    System.setProperty(org.slf4j.impl.SimpleLogger.DEFAULT_LOG_LEVEL_KEY, "DEBUG")
 
     runBlocking {
         val addr1 = InetSocketAddress("localhost", 1337)
@@ -104,6 +105,10 @@ fun main() {
         val chat2 = SimpleChatProtocol(nick2)
         val chat3 = SimpleChatProtocol(nick3)
 
+        chat1.onMessage = { println(it) }
+        chat2.onMessage = { println(it) }
+        chat3.onMessage = { println(it) }
+
         chat1.roomMembers[chat1.nickname] = addr1
         chat2.roomMembers[chat2.nickname] = addr2
         chat3.roomMembers[chat3.nickname] = addr3
@@ -117,10 +122,12 @@ fun main() {
         val c = launch(Dispatchers.IO) { runner3.run() }
 
         chat2.askToJoin(addr1)
-        chat3.askToJoin(addr1)
-
         chat2.join()
+
+        chat3.askToJoin(addr1)
         chat3.join()
+
+        delay(2000)
 
         chat1.send("Hey, guys!")
         chat2.send("What?")
