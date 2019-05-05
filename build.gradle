@@ -16,6 +16,17 @@ repositories {
     maven { url 'https://jitpack.io' }
 }
 
+apply plugin: 'maven'
+
+task sourcesJar(type: Jar, dependsOn: classes) {
+    classifier = 'sources'
+    from sourceSets.main.allSource
+}
+
+artifacts {
+    archives sourcesJar
+}
+
 dependencies {
     implementation "org.jetbrains.kotlin:kotlin-stdlib-jdk8"
     implementation "org.jetbrains.kotlinx:kotlinx-coroutines-core:$coroutines_version"
@@ -27,6 +38,10 @@ dependencies {
     testImplementation 'org.junit.jupiter:junit-jupiter-api:5.3.1'
     testRuntimeOnly 'org.junit.jupiter:junit-jupiter-engine:5.3.1'
     testImplementation group: 'org.slf4j', name: 'slf4j-simple', version: '1.7.26'
+}
+
+test {
+    useJUnitPlatform()
 }
 
 compileKotlin {

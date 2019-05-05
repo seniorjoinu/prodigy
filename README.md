@@ -1,6 +1,8 @@
 ## Prodigy - Protocol Digitalyzer
 Let's you write compact and portable P2P protocols using Kotlin type-safe builders
 
+[![Build Status](https://travis-ci.com/seniorjoinu/prodigy.svg?branch=master)](https://travis-ci.com/seniorjoinu/prodigy)
+
 ### Example
 Let's suppose we have the following classes
 
