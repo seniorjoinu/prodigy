@@ -18,13 +18,18 @@ class ProtocolRunner(val bindAddress: InetSocketAddress) {
     val responses = ConcurrentHashMap<Long, ProtocolPacket>()
     var state = ProtocolRunnerState.NEW
 
-    val sendHandler: SendHandler = { packet, recipient ->
+    val sendHandler: SendHandler = { packet: ProtocolPacket,
+                                     recipient: InetSocketAddress,
+                                     trtTimeoutMs: Long,
+                                     fctTimeoutMs: Long,
+                                     windowSizeBytes: Int ->
+
         val serializedPacket = SerializationUtils.toBytes(packet)
         val buffer = ByteBuffer.allocateDirect(serializedPacket.size)
         buffer.put(serializedPacket)
         buffer.flip()
 
-        socket.send(buffer, recipient, 15000, { 50 }, { 1400 })
+        socket.send(buffer, recipient, trtTimeoutMs, { fctTimeoutMs }, { windowSizeBytes })
     }
 
     val receiveHandler: ReceiveHandler = {

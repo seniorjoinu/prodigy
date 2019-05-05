@@ -38,5 +38,11 @@ data class ProtocolPacket(
     }
 }
 
-typealias SendHandler = suspend (packet: ProtocolPacket, recipient: InetSocketAddress) -> Unit
+typealias SendHandler = suspend (
+    packet: ProtocolPacket,
+    recipient: InetSocketAddress,
+    trtTimeoutMs: Long,
+    fctTimeoutMs: Long,
+    windowSizeBytes: Int
+) -> Unit
 typealias ReceiveHandler = suspend (threadId: Long) -> ProtocolPacket?

@@ -26,12 +26,15 @@ abstract class Sender {
         protocolName: String,
         messageType: String,
         recipient: InetSocketAddress,
-        messageBody: Serializable? = null
+        messageBody: Serializable? = null,
+        trtTimeoutMs: Long = 15000,
+        fctTimeoutMs: Long = 100,
+        windowSizeBytes: Int = 1400
     ) {
         val serializedBody = SerializationUtils.toBytes(messageBody)
         val packet = ProtocolPacket(protocolName = protocolName, messageType = messageType, payload = serializedBody)
 
-        sendHandler(packet, recipient)
+        sendHandler(packet, recipient, trtTimeoutMs, fctTimeoutMs, windowSizeBytes)
 
         logger.debug { "Sent request [protocolName: $protocolName, messageType: $messageType, recipient: $recipient]" }
     }
@@ -50,7 +53,10 @@ abstract class Sender {
         recipient: InetSocketAddress,
         responseClazz: Class<T>,
         messageBody: Serializable? = null,
-        timeoutMs: Long = 10000
+        timeoutMs: Long = 30000,
+        trtTimeoutMs: Long = 15000,
+        fctTimeoutMs: Long = 100,
+        windowSizeBytes: Int = 1400
     ): T {
         val serializedBody = SerializationUtils.toBytes(messageBody)
         val threadId = Random().nextLong()
@@ -61,7 +67,7 @@ abstract class Sender {
             payload = serializedBody
         )
 
-        sendHandler(packet, recipient)
+        sendHandler(packet, recipient, trtTimeoutMs, fctTimeoutMs, windowSizeBytes)
 
         logger.debug { "Sent request [protocolName: $protocolName, messageType: $messageType, recipient: $recipient, threadId: $threadId], waiting for response..." }
 
@@ -120,14 +126,19 @@ class Request(
 
     var responded = false
 
-    suspend fun respond(responseBody: Serializable? = null) {
+    suspend fun respond(
+        responseBody: Serializable? = null,
+        trtTimeoutMs: Long = 15000,
+        fctTimeoutMs: Long = 100,
+        windowSizeBytes: Int = 1400
+    ) {
         if (responded)
             throw AlreadyRespondedException("You've already responded [protocolName: $protocolName, messageType: $messageType, threadId: $threadId]")
 
         val serializedPayload = SerializationUtils.toBytes(responseBody)
         val packet = ProtocolPacket(threadId, ProtocolPacketFlag.RESPONSE, protocolName, messageType, serializedPayload)
 
-        respondHandler(packet, sender)
+        respondHandler(packet, sender, trtTimeoutMs, fctTimeoutMs, windowSizeBytes)
 
         logger.debug { "Respond [protocolName: $protocolName, messageType: $messageType, recipient: $sender, threadId: $threadId]" }
 
