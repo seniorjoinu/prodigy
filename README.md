@@ -119,7 +119,7 @@ protocol("CHAT") {
 
 #### Combining everything together
 So we have our passive protocol side done nicely using fancy Kotlin type-safe builders syntax, but how do we actually
-send somebody this messages? How do we `join` or `leave` the room? How do we keep all this stuff together in one place?
+send somebody these messages? How do we `join` or `leave` the room? How do we keep all this stuff together in one place?
 
 The best thing in OOP is re-usability. We can declare some class that encapsulates some complex stuff inside it
 and gives us a clear simple API. Let's use OOP to solve our problem gracefully.
