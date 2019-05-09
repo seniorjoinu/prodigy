@@ -317,6 +317,4 @@ runBlocking {
 * Pretty
 
 ### Install
-1. Make sure you understand how reliable UDP works (you should put `wirehair` binaries under the resources dir, 
-now you can get it from test resources of this repo) - one day I'll fix this, I promise
-2. Use [Jitpack](https://jitpack.io/)
+Use [Jitpack](https://jitpack.io/)
