@@ -3,6 +3,7 @@ package net.joinu.prodigy
 import mu.KotlinLogging
 import org.nustaq.serialization.FSTConfiguration
 import java.io.Serializable
+import java.nio.ByteBuffer
 import java.util.*
 
 object SerializationUtils {
@@ -24,6 +25,14 @@ object SerializationUtils {
         logger.trace { "Successfully deserialized $obj" }
 
         return clazz.cast(obj)
+    }
+
+    inline fun <reified T> toAny(buffer: ByteBuffer): T {
+        val bytes = ByteArray(buffer.limit())
+        buffer.get(bytes)
+        buffer.flip()
+
+        return SerializationUtils.toAny(bytes)
     }
 
     inline fun <reified T> toAny(bytes: ByteArray): T =

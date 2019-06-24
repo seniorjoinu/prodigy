@@ -1,11 +1,9 @@
 package net.joinu.prodigy
 
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.launch
-import kotlinx.coroutines.runBlocking
 import org.junit.jupiter.api.Test
 import java.io.Serializable
 import java.net.InetSocketAddress
+import java.util.concurrent.CompletableFuture
 
 
 object ChatMessageType {
@@ -47,101 +45,110 @@ class SimpleChatProtocol(val nickname: String) : AbstractProtocol() {
         }
     }
 
-    suspend fun send(message: String) {
+    fun send(message: String): CompletableFuture<Void> {
         val messageObj = ChatMessage(nickname, message, ChatMessageType.SHARED)
 
-        roomMembers.forEach {
-            send("CHAT", "message", it.value, messageObj)
-        }
+        val futures = roomMembers.map { send("CHAT", "message", it.value, messageObj) }
+
+        return CompletableFuture.allOf(*(futures.toTypedArray()))
     }
 
-    suspend fun sendDirect(message: String, to: String) {
+    fun sendDirect(message: String, to: String): CompletableFuture<Unit> {
         val messageObj = ChatMessage(nickname, message, ChatMessageType.DIRECT)
         val recipient = roomMembers[to]!!
 
-        send("CHAT", "message", recipient, messageObj)
+        return send("CHAT", "message", recipient, messageObj)
     }
 
-    suspend fun join() {
-        roomMembers.filter { it.key != nickname }.forEach {
-            send("CHAT", "join", it.value, nickname)
-        }
+    fun join(): CompletableFuture<Void> {
+        val futures = roomMembers
+            .filter { it.key != nickname }
+            .map { send("CHAT", "join", it.value, nickname) }
+
+        return CompletableFuture.allOf(*(futures.toTypedArray()))
     }
 
-    suspend fun leave() {
-        roomMembers.filter { it.key != nickname }.forEach {
-            send("CHAT", "leave", it.value, nickname)
-        }
+    fun leave(): CompletableFuture<Void> {
+        val futures = roomMembers
+            .filter { it.key != nickname }
+            .map { send("CHAT", "leave", it.value, nickname) }
+
+        return CompletableFuture.allOf(*(futures.toTypedArray()))
     }
 
-    suspend fun askToJoin(gateway: InetSocketAddress) {
-        val roomMembers = sendAndReceive<HashMap<String, InetSocketAddress>>("CHAT", "ask to join", gateway)
-        this.roomMembers.putAll(roomMembers)
-    }
+    fun askToJoin(gateway: InetSocketAddress) =
+        sendAndReceive<HashMap<String, InetSocketAddress>>("CHAT", "ask to join", gateway)
+            .thenAccept { this.roomMembers.putAll(it) }
 
-    var onMessage: suspend (message: ChatMessage) -> Unit = { }
-    var onJoin: suspend (nickname: String) -> Unit = { }
-    var onLeave: suspend (nickname: String) -> Unit = { }
+
+    var onMessage: (message: ChatMessage) -> Unit = { }
+    var onJoin: (nickname: String) -> Unit = { }
+    var onLeave: (nickname: String) -> Unit = { }
 }
 
 
 class ExampleTest {
 
+    init {
+        System.setProperty(org.slf4j.impl.SimpleLogger.DEFAULT_LOG_LEVEL_KEY, "DEBUG")
+    }
+
     @Test
     fun `chat protocol works well`() {
-        System.setProperty(org.slf4j.impl.SimpleLogger.DEFAULT_LOG_LEVEL_KEY, "DEBUG")
+        val addr1 = InetSocketAddress("localhost", 1337)
+        val addr2 = InetSocketAddress("localhost", 1338)
+        val addr3 = InetSocketAddress("localhost", 1339)
 
-        runBlocking {
-            val addr1 = InetSocketAddress("localhost", 1337)
-            val addr2 = InetSocketAddress("localhost", 1338)
-            val addr3 = InetSocketAddress("localhost", 1339)
+        val runner1 = ProtocolRunner(RUDPNetworkProvider()).also { it.bind(addr1) }
+        val runner2 = ProtocolRunner(RUDPNetworkProvider()).also { it.bind(addr2) }
+        val runner3 = ProtocolRunner(RUDPNetworkProvider()).also { it.bind(addr3) }
 
-            val runner1 = ProtocolRunner(addr1)
-            val runner2 = ProtocolRunner(addr2)
-            val runner3 = ProtocolRunner(addr3)
+        val nick1 = "John Smith"
+        val nick2 = "John Doe"
+        val nick3 = "John Snow"
 
-            val nick1 = "John Smith"
-            val nick2 = "John Doe"
-            val nick3 = "John Snow"
+        val chat1 = SimpleChatProtocol(nick1)
+        val chat2 = SimpleChatProtocol(nick2)
+        val chat3 = SimpleChatProtocol(nick3)
 
-            val chat1 = SimpleChatProtocol(nick1)
-            val chat2 = SimpleChatProtocol(nick2)
-            val chat3 = SimpleChatProtocol(nick3)
+        chat1.onMessage = { println(it) }
+        chat2.onMessage = { println(it) }
+        chat3.onMessage = { println(it) }
 
-            chat1.onMessage = { println(it) }
-            chat2.onMessage = { println(it) }
-            chat3.onMessage = { println(it) }
+        var joined = 0
+        chat1.onJoin = { joined++ }
 
-            chat1.roomMembers[chat1.nickname] = addr1
-            chat2.roomMembers[chat2.nickname] = addr2
-            chat3.roomMembers[chat3.nickname] = addr3
+        var left = 0
+        chat1.onLeave = { left++ }
 
-            runner1.registerProtocol(chat1)
-            runner2.registerProtocol(chat2)
-            runner3.registerProtocol(chat3)
+        chat1.roomMembers[chat1.nickname] = addr1
+        chat2.roomMembers[chat2.nickname] = addr2
+        chat3.roomMembers[chat3.nickname] = addr3
 
-            launch(Dispatchers.IO) { runner1.run() }
-            launch(Dispatchers.IO) { runner2.run() }
-            launch(Dispatchers.IO) { runner3.run() }
+        runner1.registerProtocol(chat1)
+        runner2.registerProtocol(chat2)
+        runner3.registerProtocol(chat3)
 
-            chat2.askToJoin(addr1)
-            chat2.join()
+        chat2.askToJoin(addr1)
+            .thenCompose { chat2.join() }
+            .thenCompose { chat3.askToJoin(addr1) }
+            .thenCompose { chat3.join() }
+            .thenCompose { chat1.send("Hey, guys!") }
+            .thenCompose { chat2.send("What?") }
+            .thenCompose { chat1.send("Isn't this cool?") }
+            .thenCompose { chat3.send("Yes ofc") }
+            .thenCompose { chat3.sendDirect("Actually not, haha", nick2) }
+            .thenCompose { chat2.leave() }
+            .thenCompose { chat3.leave() }
 
-            chat3.askToJoin(addr1)
-            chat3.join()
-
-            chat1.send("Hey, guys!")
-            chat2.send("What?")
-            chat1.send("Isn't this cool?")
-            chat3.send("Yes ofc")
-            chat3.sendDirect("Actually not, haha", nick2)
-
-            chat2.leave()
-            chat3.leave()
-
-            runner1.close()
-            runner2.close()
-            runner3.close()
+        while (joined < 2 || left < 2) {
+            runner1.runOnce()
+            runner2.runOnce()
+            runner3.runOnce()
         }
+
+        runner1.close()
+        runner2.close()
+        runner3.close()
     }
 }

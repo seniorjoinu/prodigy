@@ -3,6 +3,7 @@ package net.joinu.prodigy
 import java.io.Serializable
 import java.net.InetSocketAddress
 import java.util.*
+import java.util.concurrent.CompletableFuture
 
 
 object ProtocolPacketFlag {
@@ -38,11 +39,7 @@ data class ProtocolPacket(
     }
 }
 
-typealias SendHandler = suspend (
-    packet: ProtocolPacket,
-    recipient: InetSocketAddress,
-    trtTimeoutMs: Long,
-    fctTimeoutMs: Long,
-    windowSizeBytes: Int
-) -> Unit
-typealias ReceiveHandler = suspend (threadId: Long) -> ProtocolPacket?
+typealias SendHandler = (packet: ProtocolPacket, to: InetSocketAddress) -> CompletableFuture<Unit>
+typealias ReceiveHandler = (threadId: Long) -> CompletableFuture<ProtocolPacket>
+typealias HandlerWrapper = Handler.(handler: HandlerBody) -> Unit
+typealias HandlerBody = Handler.() -> Unit
