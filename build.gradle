@@ -1,15 +1,15 @@
 buildscript {
-    ext.kotlin_version = "1.3.20"
-    ext.coroutines_version = "1.1.1"
-    ext.reliable_udp_version = "0.1.6"
+    ext.kotlin_version = "1.3.40"
+    ext.coroutines_version = "1.2.2"
+    ext.reliable_udp_version = "0.3.0"
 }
 
 plugins {
-    id 'org.jetbrains.kotlin.jvm' version '1.3.21'
+    id 'org.jetbrains.kotlin.jvm' version '1.3.40'
 }
 
 group 'net.joinu'
-version '1.0-SNAPSHOT'
+version '0.2.0'
 
 repositories {
     mavenCentral()
@@ -29,15 +29,17 @@ artifacts {
 
 dependencies {
     implementation "org.jetbrains.kotlin:kotlin-stdlib-jdk8"
-    implementation "org.jetbrains.kotlinx:kotlinx-coroutines-core:$coroutines_version"
     implementation 'io.github.microutils:kotlin-logging:1.6.24'
     implementation "com.github.seniorjoinu:reliable-udp:$reliable_udp_version"
     implementation "de.ruedigermoeller:fst:2.56"
     implementation "org.jetbrains.kotlin:kotlin-reflect:$kotlin_version"
-
+    
+    testImplementation "org.jetbrains.kotlinx:kotlinx-coroutines-core:$coroutines_version"
     testImplementation 'org.junit.jupiter:junit-jupiter-api:5.3.1'
     testRuntimeOnly 'org.junit.jupiter:junit-jupiter-engine:5.3.1'
     testImplementation group: 'org.slf4j', name: 'slf4j-simple', version: '1.7.26'
+    testImplementation "org.jetbrains.kotlin:kotlin-test:$kotlin_version"
+    testImplementation "org.jetbrains.kotlin:kotlin-test-junit:$kotlin_version"
 }
 
 test {

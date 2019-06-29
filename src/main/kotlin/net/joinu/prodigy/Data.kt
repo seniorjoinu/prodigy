@@ -4,12 +4,23 @@ import java.io.Serializable
 import java.net.InetSocketAddress
 import java.util.*
 
-
+/**
+ * Represents packet type (now support only request-response model)
+ */
 object ProtocolPacketFlag {
     const val REQUEST = 0
     const val RESPONSE = 1
 }
 
+/**
+ * Structure that is used to represent any type of data flowing through network.
+ *
+ * @param protocolThreadId [Long] - some unique id used for request-response logic TODO: switch to UUID
+ * @param protocolFlag [Int] - [ProtocolPacketFlag]
+ * @param protocolName [String] - packet protocol name
+ * @param messageType [String] - packet protocol message type
+ * @param payload [ByteArray] - raw data to transmit
+ */
 data class ProtocolPacket(
     var protocolThreadId: Long = Random().nextLong(),
     var protocolFlag: Int = ProtocolPacketFlag.REQUEST,
@@ -38,11 +49,7 @@ data class ProtocolPacket(
     }
 }
 
-typealias SendHandler = suspend (
-    packet: ProtocolPacket,
-    recipient: InetSocketAddress,
-    trtTimeoutMs: Long,
-    fctTimeoutMs: Long,
-    windowSizeBytes: Int
-) -> Unit
-typealias ReceiveHandler = suspend (threadId: Long) -> ProtocolPacket?
+typealias SendHandler = suspend (packet: ProtocolPacket, to: InetSocketAddress) -> Unit
+typealias ReceiveHandler = suspend (threadId: Long) -> ProtocolPacket
+
+class AlreadyRespondedException(message: String) : RuntimeException(message)
