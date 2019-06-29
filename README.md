@@ -1,7 +1,8 @@
 ## Prodigy - Protocol Digitalyzer
-Let's you write compact and portable P2P protocols using Kotlin type-safe builders
+Let's you write compact and portable P2P protocols using Kotlin DSL
 
 [![Build Status](https://travis-ci.com/seniorjoinu/prodigy.svg?branch=master)](https://travis-ci.com/seniorjoinu/prodigy)
+[![](https://jitpack.io/v/seniorjoinu/prodigy.svg)](https://jitpack.io/#seniorjoinu/prodigy)
 
 ### What's in it
 So you want to implement some networking for your app. Maybe you wanna make some multiplayer game or even your own fancy
@@ -67,7 +68,7 @@ Inside `on()`'s lambda body we're allowed to access special `Request` object. Th
 in it but now we're interested in only one - `respond()` method. 
 This method responds to the sender with some stuff.
 
-> Inside `on()`'s lambda body there is also `send()` and `sendAndReceive()` functions, so you can even send a message to 
+> Inside `on()`'s lambda body there is also `send()` and `exchange()` functions, so you can even send a message to 
 some other protocol from it
 
 > Warning! Everything sent and received through Prodigy should implement `java.io.Serializable` - 
@@ -77,7 +78,6 @@ Ok, here we go:
 ```kotlin
 on("ask to join") {
     // some whitelisting logic goes here
-
     request.respond(roomMembers)
 }
 ```
@@ -92,14 +92,12 @@ on("message") {
 
 on("join") {
     val nickname = request.getPayloadAs<String>()
-    
     // we can also retrieve the sender's address from the Request object
     roomMembers[nickname] = request.sender
 }
 
 on("leave") {
     val nickname = request.getPayloadAs<String>()
-
     roomMembers.remove(nickname)
 }
 ```
@@ -125,53 +123,59 @@ The best thing in OOP is re-usability. We can declare some class that encapsulat
 and gives us a clear simple API. Let's use OOP to solve our problem gracefully.
 
 There is a special class in Prodigy for this - `AbstractProtocol`. Inside this class we can declare complete logic 
-related to our protocol implementation. It also gives us `send()` and `sendAndReceive()` methods so we can actually
+related to our protocol implementation. It also gives us `send()` and `exchange()` methods so we can actually
 send some messages using it. Let's give it a try! Here's the complete code of our chat protocol:
 
 ```kotlin
-class SimpleChatProtocol(val nickname: String) : AbstractProtocol() {
+/**
+ * Chat protocol.
+ *
+ * @param nickname [String] - user's nickname
+ * @param address [InetSocketAddress] - user's address
+ */
+class SimpleChatProtocol(val nickname: String, address: InetSocketAddress) : AbstractProtocol() {
     val roomMembers = HashMap<String, InetSocketAddress>()
 
-    override val protocol = protocol("CHAT") {
+    init {
+        roomMembers[nickname] = address
+    }
+
+    override val handler = protocol("CHAT") {
         on("message") {
             val message = request.getPayloadAs<ChatMessage>()
-
-            // as you might notice we did add these little onSomething callbacks - the explanation is down below of this code chunk
-            onMessage(message)
+            println(message)
         }
 
         on("ask to join") {
-            // some whitelisting logic goes here
-
+            // we can whitelist here
             request.respond(roomMembers)
         }
 
         on("join") {
             val nickname = request.getPayloadAs<String>()
             roomMembers[nickname] = request.sender
-
-            onJoin(nickname)
         }
 
         on("leave") {
             val nickname = request.getPayloadAs<String>()
-
             roomMembers.remove(nickname)
-
-            onLeave(nickname)
         }
     }
 
-    // sends message to all room members
-    suspend fun send(message: String) {
+    /**
+     * Send message to everyone asynchronously
+     */
+    suspend fun send(message: String) = coroutineScope {
         val messageObj = ChatMessage(nickname, message, ChatMessageType.SHARED)
 
-        roomMembers.forEach {
-            send("CHAT", "message", it.value, messageObj)
-        }
+        roomMembers
+            .map { async { send("CHAT", "message", it.value, messageObj) } }
+            .awaitAll()
     }
 
-    // sends direct message to the certain receiver
+    /**
+     * Send message to someone
+     */
     suspend fun sendDirect(message: String, to: String) {
         val messageObj = ChatMessage(nickname, message, ChatMessageType.DIRECT)
         val recipient = roomMembers[to]!!
@@ -179,47 +183,58 @@ class SimpleChatProtocol(val nickname: String) : AbstractProtocol() {
         send("CHAT", "message", recipient, messageObj)
     }
 
-    // joins some room
-    suspend fun join() {
-        roomMembers.filter { it.key != nickname }.forEach {
-            send("CHAT", "join", it.value, nickname)
-        }
+    /**
+     * Join some chat room
+     */
+    suspend fun join() = coroutineScope {
+        roomMembers
+            .filter { it.key != nickname }
+            .map { async { send("CHAT", "join", it.value, nickname) } }
+            .awaitAll()
     }
 
-    // leaves some room
-    suspend fun leave() {
-        roomMembers.filter { it.key != nickname }.forEach {
-            send("CHAT", "leave", it.value, nickname)
-        }
+    /**
+     * Leave some chat room
+     */
+    suspend fun leave() = coroutineScope {
+        roomMembers
+            .filter { it.key != nickname }
+            .map { async { send("CHAT", "leave", it.value, nickname) } }
+            .awaitAll()
     }
 
-    // asks room master to join the room
+    /**
+     * Ask room owner to join their room
+     */
     suspend fun askToJoin(gateway: InetSocketAddress) {
-        val roomMembers = sendAndReceive<HashMap<String, InetSocketAddress>>("CHAT", "ask to join", gateway)
+        val roomMembers = exchange<HashMap<String, InetSocketAddress>>("CHAT", "ask to join", gateway)
+
         this.roomMembers.putAll(roomMembers)
     }
-
-    // this callbacks are invoked when some events take place, so we can extend our protocol with some other actions
-    var onMessage: suspend (message: ChatMessage) -> Unit = { }
-    var onJoin: suspend (nickname: String) -> Unit = { }
-    var onLeave: suspend (nickname: String) -> Unit = { }
 }
 
-// just a flag that determines message type
+/**
+ * Flag that distinguishes chat message type
+ */
 object ChatMessageType {
     const val SHARED = 0
     const val DIRECT = 1
 }
 
-// message structure to keep everything in one place
-// NOTE: implements Serializable
+/**
+ * Chat message itself. NOTE (!) implements Serializable
+ *
+ * @param from [String] - sender's nickname
+ * @param message [String] - message
+ * @param type [Int] - [ChatMessageType]
+ */
 data class ChatMessage(val from: String, val message: String, val type: Int) : Serializable
 ```
 
-As you might notice, all methods have the `suspend` modifier - it's because Prodigy is made with concurrency in mind
-and all work is distributed between threads as much as possible. As you also might notice, we now have everything in one
-place: our *passive* logic that reacts to some messages is in the same place where our *active* logic that actually does
-some actions. Everything is wrapped in a single facade. You now can invoke some methods like: 
+As you might notice, all methods have the `suspend` modifier - it's because Prodigy is made with [coroutines](https://github.com/Kotlin/kotlinx.coroutines) - 
+something like `inversed futures`. As you also might notice, we now have everything in one place: our *passive* logic 
+that reacts to some messages is in the same place where our *active* logic that actually does some actions. Everything 
+is wrapped in a single facade. You now can invoke some methods like: 
 ```kotlin
 chatProtocolInstance.sendDirect("blabla", someNickname)
 ```
@@ -243,73 +258,58 @@ local address and that's amazing because it allows you to utilize the minimum
 
 Let's run our protocol:
 ```kotlin
+// create some addresses
+val addr1 = InetSocketAddress("localhost", 1337)
+val addr2 = InetSocketAddress("localhost", 1338)
+val addr3 = InetSocketAddress("localhost", 1339)
+
+// create some protocol runners and bind them
+val runner1 = ProtocolRunner(RUDPNetworkProvider()).also { it.bind(addr1) }
+val runner2 = ProtocolRunner(RUDPNetworkProvider()).also { it.bind(addr2) }
+val runner3 = ProtocolRunner(RUDPNetworkProvider()).also { it.bind(addr3) }
+
+// create chat protocols
+val chat1 = SimpleChatProtocol("John Smith", addr1)
+val chat2 = SimpleChatProtocol("John Doe", addr2)
+val chat3 = SimpleChatProtocol("John Snow", addr3)
+
+// register protocols at runners
+runner1.registerProtocol(chat1)
+runner2.registerProtocol(chat2)
+runner3.registerProtocol(chat3)
+
+// preparations are over
 runBlocking {
-    // creating some addresses
-    val addr1 = InetSocketAddress("localhost", 1337)
-    val addr2 = InetSocketAddress("localhost", 1338)
-    val addr3 = InetSocketAddress("localhost", 1339)
+    // start runners
+    launch { runner1.runSuspending() }
+    launch { runner2.runSuspending() }
+    launch { runner3.runSuspending() }
 
-    // starting runners on these addresses (after this addresses will be counted as "BOUND")
-    val runner1 = ProtocolRunner(addr1)
-    val runner2 = ProtocolRunner(addr2)
-    val runner3 = ProtocolRunner(addr3)
-
-    // choosing some nicknames for our users
-    val nick1 = "John Smith"
-    val nick2 = "John Doe"
-    val nick3 = "John Snow"
-
-    // creating protocols
-    val chat1 = SimpleChatProtocol(nick1)
-    val chat2 = SimpleChatProtocol(nick2)
-    val chat3 = SimpleChatProtocol(nick3)
-
-    // setting onMessage handlers to print every incoming message
-    chat1.onMessage = { println(it) }
-    chat2.onMessage = { println(it) }
-    chat3.onMessage = { println(it) }
-
-    // pre-populating rooms with it's masters (yes, this is dirty and should be done somewhere else)
-    chat1.roomMembers[chat1.nickname] = addr1
-    chat2.roomMembers[chat2.nickname] = addr2
-    chat3.roomMembers[chat3.nickname] = addr3
-
-    // register protocols on different runners (emulating network)
-    runner1.registerProtocol(chat1)
-    runner2.registerProtocol(chat2)
-    runner3.registerProtocol(chat3)
-
-    // starting runners on IO dispatchers because run() suspends until close() fired
-    launch(Dispatchers.IO) { runner1.run() }
-    launch(Dispatchers.IO) { runner2.run() }
-    launch(Dispatchers.IO) { runner3.run() }
-
-    // do some actual stuff
-
+    // make some conversation
     chat2.askToJoin(addr1)
     chat2.join()
-
     chat3.askToJoin(addr1)
     chat3.join()
-
     chat1.send("Hey, guys!")
     chat2.send("What?")
     chat1.send("Isn't this cool?")
     chat3.send("Yes ofc")
-    chat3.sendDirect("Actually not, haha", nick2)
-
+    chat3.sendDirect("Actually not, haha", "John Doe")
     chat2.leave()
     chat3.leave()
 
-    // closing runners
-    runner1.close()
-    runner2.close()
-    runner3.close()
+    // stop runners
+    coroutineContext.cancelChildren()
 }
+
+// close runners, free resources
+runner1.close()
+runner2.close()
+runner3.close()
 ```
 
 ### Features
-* Coroutine-powered multithreaded solution 
+* Coroutine-powered solution that scales
 * Based on [no-ARQ reliable UDP](https://github.com/seniorjoinu/reliable-udp)
 * Uses [one of the fastest serialization libraries](https://github.com/RuedigerMoeller/fast-serialization)
 * Enables you to decouple p2p-protocol from business logic
@@ -318,3 +318,6 @@ runBlocking {
 
 ### Install
 Use [Jitpack](https://jitpack.io/)
+
+### Limitations
+Currently works only for linux/win 32-64, but you can help me fix this - [details here.](https://github.com/seniorjoinu/wirehair-wrapper)

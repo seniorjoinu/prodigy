@@ -6,14 +6,29 @@ import org.junit.jupiter.api.Test
 import java.io.Serializable
 import java.net.InetSocketAddress
 
-
+/**
+ * Flag that distinguishes chat message type
+ */
 object ChatMessageType {
     const val SHARED = 0
     const val DIRECT = 1
 }
 
+/**
+ * Chat message itself. NOTE (!) implements Serializable
+ *
+ * @param from [String] - sender's nickname
+ * @param message [String] - message
+ * @param type [Int] - [ChatMessageType]
+ */
 data class ChatMessage(val from: String, val message: String, val type: Int) : Serializable
 
+/**
+ * Chat protocol.
+ *
+ * @param nickname [String] - user's nickname
+ * @param address [InetSocketAddress] - user's address
+ */
 class SimpleChatProtocol(val nickname: String, address: InetSocketAddress) : AbstractProtocol() {
     val roomMembers = HashMap<String, InetSocketAddress>()
 
@@ -23,15 +38,13 @@ class SimpleChatProtocol(val nickname: String, address: InetSocketAddress) : Abs
         roomMembers[nickname] = address
     }
 
-    var onMessage: suspend (message: ChatMessage) -> Unit = { println(it) }
-
-    override val protocol = protocol("CHAT") {
+    override val handler = protocol("CHAT") {
         on("message") {
             val message = request.getPayloadAs<ChatMessage>()
 
             logger.info { "Got on(message) request" }
 
-            onMessage(message)
+            println(message)
         }
 
         on("ask to join") {
@@ -58,6 +71,9 @@ class SimpleChatProtocol(val nickname: String, address: InetSocketAddress) : Abs
         }
     }
 
+    /**
+     * Send message to everyone asynchronously
+     */
     suspend fun send(message: String) = coroutineScope {
         val messageObj = ChatMessage(nickname, message, ChatMessageType.SHARED)
 
@@ -66,6 +82,9 @@ class SimpleChatProtocol(val nickname: String, address: InetSocketAddress) : Abs
             .awaitAll()
     }
 
+    /**
+     * Send message to someone
+     */
     suspend fun sendDirect(message: String, to: String) {
         val messageObj = ChatMessage(nickname, message, ChatMessageType.DIRECT)
         val recipient = roomMembers[to]!!
@@ -73,6 +92,9 @@ class SimpleChatProtocol(val nickname: String, address: InetSocketAddress) : Abs
         send("CHAT", "message", recipient, messageObj)
     }
 
+    /**
+     * Join some chat room
+     */
     suspend fun join() = coroutineScope {
         roomMembers
             .filter { it.key != nickname }
@@ -80,6 +102,9 @@ class SimpleChatProtocol(val nickname: String, address: InetSocketAddress) : Abs
             .awaitAll()
     }
 
+    /**
+     * Leave some chat room
+     */
     suspend fun leave() = coroutineScope {
         roomMembers
             .filter { it.key != nickname }
@@ -87,6 +112,9 @@ class SimpleChatProtocol(val nickname: String, address: InetSocketAddress) : Abs
             .awaitAll()
     }
 
+    /**
+     * Ask room owner to join their room
+     */
     suspend fun askToJoin(gateway: InetSocketAddress) {
         val roomMembers = exchange<HashMap<String, InetSocketAddress>>("CHAT", "ask to join", gateway)
 
@@ -102,27 +130,34 @@ class ExampleTest {
 
     @Test
     fun `chat protocol works well`() {
+        // create some addresses
         val addr1 = InetSocketAddress("localhost", 1337)
         val addr2 = InetSocketAddress("localhost", 1338)
         val addr3 = InetSocketAddress("localhost", 1339)
 
+        // create some protocol runners and bind them
         val runner1 = ProtocolRunner(RUDPNetworkProvider()).also { it.bind(addr1) }
         val runner2 = ProtocolRunner(RUDPNetworkProvider()).also { it.bind(addr2) }
         val runner3 = ProtocolRunner(RUDPNetworkProvider()).also { it.bind(addr3) }
 
+        // create chat protocols
         val chat1 = SimpleChatProtocol("John Smith", addr1)
         val chat2 = SimpleChatProtocol("John Doe", addr2)
         val chat3 = SimpleChatProtocol("John Snow", addr3)
 
+        // register protocols at runners
         runner1.registerProtocol(chat1)
         runner2.registerProtocol(chat2)
         runner3.registerProtocol(chat3)
 
+        // preparations are over
         runBlocking {
+            // start runners
             launch { runner1.runSuspending() }
             launch { runner2.runSuspending() }
             launch { runner3.runSuspending() }
 
+            // make some conversation
             chat2.askToJoin(addr1)
             chat2.join()
             chat3.askToJoin(addr1)
@@ -135,9 +170,11 @@ class ExampleTest {
             chat2.leave()
             chat3.leave()
 
+            // stop runners
             coroutineContext.cancelChildren()
         }
 
+        // close runners, free resources
         runner1.close()
         runner2.close()
         runner3.close()

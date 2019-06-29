@@ -7,6 +7,9 @@ import java.nio.ByteBuffer
 import java.util.*
 
 
+/**
+ * Some util funcs to handle serialization.
+ */
 object SerializationUtils {
     private val logger = KotlinLogging.logger("SerializationUtils-${Random().nextInt()}")
 

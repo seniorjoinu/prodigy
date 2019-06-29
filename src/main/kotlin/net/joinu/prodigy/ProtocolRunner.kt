@@ -8,6 +8,11 @@ import java.util.concurrent.ConcurrentHashMap
 import kotlin.coroutines.coroutineContext
 
 
+/**
+ * The class that is used to actually run protocols
+ *
+ * @param networkProvider [NetworkProvider] - some entity that is responsible for sending and receiving packets
+ */
 class ProtocolRunner(val networkProvider: NetworkProvider) {
     val protocols = ConcurrentHashMap<String, AbstractProtocol>()
     val responses = ConcurrentHashMap<Long, ProtocolPacket>()
@@ -27,24 +32,37 @@ class ProtocolRunner(val networkProvider: NetworkProvider) {
 
     private val logger = KotlinLogging.logger("ProtocolRunner-${Random().nextInt()}")
 
-    fun registerProtocol(wrapper: AbstractProtocol) {
-        protocols[wrapper.protocol.protocolName] = wrapper
+    /**
+     * Add handler to handler runner context.
+     *
+     * @param protocol [AbstractProtocol] - protocol to add
+     */
+    fun registerProtocol(protocol: AbstractProtocol) {
+        protocols[protocol.handler.protocolName] = protocol
 
-        wrapper.applySendHandler(sendHandler)
-        wrapper.protocol.applySendHandler(sendHandler)
+        protocol.applySendHandler(sendHandler)
+        protocol.handler.applySendHandler(sendHandler)
 
-        wrapper.applyReceiveHandler(receiveHandler)
-        wrapper.protocol.applyReceiveHandler(receiveHandler)
+        protocol.applyReceiveHandler(receiveHandler)
+        protocol.handler.applyReceiveHandler(receiveHandler)
 
-        logger.debug { "Protocol ${wrapper.protocol.protocolName} registered" }
+        logger.debug { "Protocol ${protocol.handler.protocolName} registered" }
     }
 
+    /**
+     * Binds [NetworkProvider] to some address
+     *
+     * @param on [InetSocketAddress] - address to bind
+     */
     fun bind(on: InetSocketAddress) {
         logger.debug { "Bound to: $on" }
 
         networkProvider.bind(on)
     }
 
+    /**
+     * Runs [NetworkProvider] and handles packet transmission and dispatching
+     */
     suspend fun runSuspending() = coroutineScope {
         launch { networkProvider.runSuspending() }
 
@@ -62,14 +80,14 @@ class ProtocolRunner(val networkProvider: NetworkProvider) {
                 val protocol = protocols[packet.protocolName]
 
                 if (protocol == null) {
-                    logger.debug { "Received a message for unknown protocol: ${packet.protocolName}" }
+                    logger.debug { "Received a message for unknown handler: ${packet.protocolName}" }
                     continue
                 }
 
-                val handler = protocol.protocol.handlers[packet.messageType]
+                val handler = protocol.handler.handlers[packet.messageType]
 
                 if (handler == null) {
-                    logger.debug { "Received a message for unknown messageType: ${packet.messageType} for protocol: ${packet.protocolName}" }
+                    logger.debug { "Received a message for unknown messageType: ${packet.messageType} for handler: ${packet.protocolName}" }
                     continue
                 }
 
@@ -91,6 +109,9 @@ class ProtocolRunner(val networkProvider: NetworkProvider) {
         }
     }
 
+    /**
+     * Closes [NetworkProvider]
+     */
     fun close() {
         logger.debug { "Closed" }
 
