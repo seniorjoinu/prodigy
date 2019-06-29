@@ -6,6 +6,7 @@ import java.io.Serializable
 import java.nio.ByteBuffer
 import java.util.*
 
+
 object SerializationUtils {
     private val logger = KotlinLogging.logger("SerializationUtils-${Random().nextInt()}")
 
@@ -32,7 +33,7 @@ object SerializationUtils {
         buffer.get(bytes)
         buffer.flip()
 
-        return SerializationUtils.toAny(bytes)
+        return toAny(bytes)
     }
 
     inline fun <reified T> toAny(bytes: ByteArray): T =

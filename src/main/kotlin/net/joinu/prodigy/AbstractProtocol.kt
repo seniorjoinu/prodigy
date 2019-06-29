@@ -4,10 +4,13 @@ import mu.KotlinLogging
 import java.io.Serializable
 import java.net.InetSocketAddress
 import java.util.*
-import java.util.concurrent.CompletableFuture
 
 
 abstract class Sender {
+    companion object {
+        var count = 0
+    }
+
     lateinit var sendHandler: SendHandler
     internal fun applySendHandler(handler: SendHandler) {
         sendHandler = handler
@@ -18,38 +21,36 @@ abstract class Sender {
         receiveHandler = handler
     }
 
-    private val logger = KotlinLogging.logger("Sender-${Random().nextInt()}")
+    private val logger = KotlinLogging.logger("Sender-${++count}")
 
-    protected fun send(
+    protected suspend fun send(
         protocolName: String,
         messageType: String,
         recipient: InetSocketAddress,
         messageBody: Serializable? = null
-    ): CompletableFuture<Unit> {
+    ) {
         val serializedBody = SerializationUtils.toBytes(messageBody)
         val packet = ProtocolPacket(protocolName = protocolName, messageType = messageType, payload = serializedBody)
 
-        val future = sendHandler(packet, recipient)
+        sendHandler(packet, recipient)
 
         logger.debug { "Sent request [protocolName: $protocolName, messageType: $messageType, recipient: $recipient]" }
-
-        return future
     }
 
-    protected inline fun <reified T> sendAndReceive(
+    protected suspend inline fun <reified T> exchange(
         protocolName: String,
         messageType: String,
         recipient: InetSocketAddress,
         messageBody: Serializable? = null
-    ) = sendAndReceive(protocolName, messageType, recipient, T::class.java, messageBody)
+    ) = exchange(protocolName, messageType, recipient, T::class.java, messageBody)
 
-    protected fun <T> sendAndReceive(
+    protected suspend fun <T> exchange(
         protocolName: String,
         messageType: String,
         recipient: InetSocketAddress,
         responseClazz: Class<T>,
         messageBody: Serializable? = null
-    ): CompletableFuture<T> {
+    ): T {
         val serializedBody = SerializationUtils.toBytes(messageBody)
         val threadId = Random().nextLong()
         val packet = ProtocolPacket(
@@ -59,12 +60,15 @@ abstract class Sender {
             payload = serializedBody
         )
 
-        val receiveFuture = receiveHandler(threadId)
-        val sendFuture = sendHandler(packet, recipient)
+        sendHandler(packet, recipient)
 
-        return sendFuture
-            .thenCombine(receiveFuture) { _, p -> p }
-            .thenApply { responsePacket -> SerializationUtils.toAny(responsePacket.payload, responseClazz) }
+        logger.debug { "Sent request [protocolName: $protocolName, messageType: $messageType, recipient: $recipient], waiting for response..." }
+
+        val responsePacket = receiveHandler(threadId)
+
+        logger.debug { "Received response for request [protocolName: $protocolName, messageType: $messageType, recipient: $recipient]" }
+
+        return SerializationUtils.toAny(responsePacket.payload, responseClazz)
     }
 }
 
@@ -104,18 +108,17 @@ class Request(
 
     var responded = false
 
-    fun respond(responseBody: Serializable? = null): CompletableFuture<Unit> {
+    suspend fun respond(responseBody: Serializable? = null) {
         if (responded)
             throw AlreadyRespondedException("You've already responded [protocolName: $protocolName, messageType: $messageType, threadId: $threadId]")
 
         val serializedPayload = SerializationUtils.toBytes(responseBody)
         val packet = ProtocolPacket(threadId, ProtocolPacketFlag.RESPONSE, protocolName, messageType, serializedPayload)
 
-        val respondFuture = respondHandler(packet, sender).thenApply { responded = true }
+        respondHandler(packet, sender)
+        responded = true
 
         logger.debug { "Respond [protocolName: $protocolName, messageType: $messageType, recipient: $sender, threadId: $threadId]" }
-
-        return respondFuture
     }
 }
 

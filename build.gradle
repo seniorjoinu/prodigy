@@ -1,11 +1,11 @@
 buildscript {
-    ext.kotlin_version = "1.3.31"
-    ext.coroutines_version = "1.1.1"
-    ext.reliable_udp_version = "0.2.1"
+    ext.kotlin_version = "1.3.40"
+    ext.coroutines_version = "1.2.2"
+    ext.reliable_udp_version = "0.3.0"
 }
 
 plugins {
-    id 'org.jetbrains.kotlin.jvm' version '1.3.31'
+    id 'org.jetbrains.kotlin.jvm' version '1.3.40'
 }
 
 group 'net.joinu'
@@ -38,6 +38,8 @@ dependencies {
     testImplementation 'org.junit.jupiter:junit-jupiter-api:5.3.1'
     testRuntimeOnly 'org.junit.jupiter:junit-jupiter-engine:5.3.1'
     testImplementation group: 'org.slf4j', name: 'slf4j-simple', version: '1.7.26'
+    testImplementation "org.jetbrains.kotlin:kotlin-test:$kotlin_version"
+    testImplementation "org.jetbrains.kotlin:kotlin-test-junit:$kotlin_version"
 }
 
 test {

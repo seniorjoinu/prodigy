@@ -1,33 +1,31 @@
 package net.joinu.prodigy
 
+import kotlinx.coroutines.*
 import mu.KotlinLogging
 import java.net.InetSocketAddress
 import java.util.*
-import java.util.concurrent.CompletableFuture
 import java.util.concurrent.ConcurrentHashMap
+import kotlin.coroutines.coroutineContext
 
 
-/**
- * TODO: check serialization optimizations
- */
 class ProtocolRunner(val networkProvider: NetworkProvider) {
     val protocols = ConcurrentHashMap<String, AbstractProtocol>()
-    val responses = ConcurrentHashMap<Long, CompletableFuture<ProtocolPacket>>()
+    val responses = ConcurrentHashMap<Long, ProtocolPacket>()
 
     private val sendHandler: SendHandler = { packet, to -> networkProvider.send(packet, to) }
     private val receiveHandler: ReceiveHandler = { threadId ->
-        val future = CompletableFuture<ProtocolPacket>()
-        responses[threadId] = future
+        var responsePacket: ProtocolPacket? = null
 
-        future
+        while (coroutineContext.isActive) {
+            responsePacket = responses.remove(threadId)
+            if (responsePacket != null) break
+            delay(1)
+        }
+
+        responsePacket!!
     }
-    private var handlerWrapper: HandlerWrapper = { handler -> handler() }
 
     private val logger = KotlinLogging.logger("ProtocolRunner-${Random().nextInt()}")
-
-    fun wrapHandlers(wrapper: HandlerWrapper) {
-        handlerWrapper = wrapper
-    }
 
     fun registerProtocol(wrapper: AbstractProtocol) {
         protocols[wrapper.protocol.protocolName] = wrapper
@@ -47,50 +45,49 @@ class ProtocolRunner(val networkProvider: NetworkProvider) {
         networkProvider.bind(on)
     }
 
-    fun runOnce() {
-        networkProvider.runOnce()
+    suspend fun runSuspending() = coroutineScope {
+        launch { networkProvider.runSuspending() }
 
-        val receivedPacketsAndAddresses = mutableListOf<Pair<ProtocolPacket, InetSocketAddress>>()
-        while (true) {
-            val packetAndAddress = networkProvider.receive() ?: break
-            receivedPacketsAndAddresses.add(packetAndAddress)
-        }
+        supervisorScope {
+            while (coroutineContext.isActive) {
+                val (packet, from) = networkProvider.receive()
 
-        receivedPacketsAndAddresses.forEach { (packet, from) ->
-            if (packet.protocolFlag == ProtocolPacketFlag.RESPONSE) {
-                responses[packet.protocolThreadId]?.complete(packet)
+                if (packet.protocolFlag == ProtocolPacketFlag.RESPONSE) {
+                    responses[packet.protocolThreadId] = packet
 
-                logger.debug { "Received response [protocolName: ${packet.protocolName}, messageType: ${packet.messageType}, recipient: $from, threadId: ${packet.protocolThreadId}]" }
+                    logger.debug { "Received response [protocolName: ${packet.protocolName}, messageType: ${packet.messageType}, recipient: $from, threadId: ${packet.protocolThreadId}]" }
+                    continue
+                }
 
-                return
+                val protocol = protocols[packet.protocolName]
+
+                if (protocol == null) {
+                    logger.debug { "Received a message for unknown protocol: ${packet.protocolName}" }
+                    continue
+                }
+
+                val handler = protocol.protocol.handlers[packet.messageType]
+
+                if (handler == null) {
+                    logger.debug { "Received a message for unknown messageType: ${packet.messageType} for protocol: ${packet.protocolName}" }
+                    continue
+                }
+
+                handler.request = Request(
+                    from,
+                    packet.payload,
+                    packet.protocolThreadId,
+                    packet.messageType,
+                    packet.protocolName,
+                    sendHandler
+                )
+
+                logger.debug { "Received REQUEST packet for threadId: ${packet.protocolThreadId}, invoking handler..." }
+
+                launch {
+                    handler.body.invoke(handler)
+                }
             }
-
-            val protocol = protocols[packet.protocolName]
-
-            if (protocol == null) {
-                logger.debug { "Received a message for unknown protocol: ${packet.protocolName}" }
-                return
-            }
-
-            val handler = protocol.protocol.handlers[packet.messageType]
-
-            if (handler == null) {
-                logger.debug { "Received a message for unknown messageType: ${packet.messageType} for protocol: ${packet.protocolName}" }
-                return
-            }
-
-            handler.request = Request(
-                from,
-                packet.payload,
-                packet.protocolThreadId,
-                packet.messageType,
-                packet.protocolName,
-                sendHandler
-            )
-
-            logger.debug { "Received REQUEST packet for threadId: ${packet.protocolThreadId}, invoking handler..." }
-
-            handlerWrapper(handler, handler.body)
         }
     }
 

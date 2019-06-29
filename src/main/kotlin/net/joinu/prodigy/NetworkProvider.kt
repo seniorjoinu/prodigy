@@ -1,28 +1,28 @@
 package net.joinu.prodigy
 
 import net.joinu.rudp.RUDPSocket
+import net.joinu.rudp.runSuspending
 import net.joinu.rudp.send
 import java.io.Closeable
 import java.net.InetSocketAddress
-import java.util.concurrent.CompletableFuture
 
 
 interface NetworkProvider : Closeable {
-    fun send(packet: ProtocolPacket, to: InetSocketAddress): CompletableFuture<Unit>
-    fun receive(): Pair<ProtocolPacket, InetSocketAddress>?
+    suspend fun send(packet: ProtocolPacket, to: InetSocketAddress)
+    suspend fun receive(): Pair<ProtocolPacket, InetSocketAddress>
     fun bind(address: InetSocketAddress)
-    fun runOnce()
+    suspend fun runSuspending()
 }
 
 class RUDPNetworkProvider(val socket: RUDPSocket = RUDPSocket()) : NetworkProvider {
 
-    override fun send(packet: ProtocolPacket, to: InetSocketAddress): CompletableFuture<Unit> {
+    override suspend fun send(packet: ProtocolPacket, to: InetSocketAddress) {
         val data = SerializationUtils.toBytes(packet)
-        return socket.send(data, to).thenApply {}
+        socket.send(data, to)
     }
 
-    override fun receive(): Pair<ProtocolPacket, InetSocketAddress>? {
-        val data = socket.receive() ?: return null
+    override suspend fun receive(): Pair<ProtocolPacket, InetSocketAddress> {
+        val data = socket.receive()
 
         return SerializationUtils.toAny<ProtocolPacket>(data.data) to data.address
     }
@@ -35,7 +35,7 @@ class RUDPNetworkProvider(val socket: RUDPSocket = RUDPSocket()) : NetworkProvid
         socket.close()
     }
 
-    override fun runOnce() {
-        socket.runOnce()
+    override suspend fun runSuspending() {
+        socket.runSuspending()
     }
 }
